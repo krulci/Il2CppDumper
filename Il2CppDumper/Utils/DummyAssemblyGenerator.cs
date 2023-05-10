@@ -1,4 +1,4 @@
-﻿using Mono.Cecil;
+using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Collections.Generic;
 using System;
@@ -631,7 +631,7 @@ namespace Il2CppDumper
                 }
                 catch
                 {
-                    Console.WriteLine($"ERROR: Error while restoring attributeIndex {attributeIndex}");
+                    ExtensionMethods.logger.LogError($"Error while restoring attributeIndex {attributeIndex}");
                 }
             }
         }

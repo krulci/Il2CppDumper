@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -88,7 +88,7 @@ namespace Il2CppDumper
             }
             if (metadataPath == null)
             {
-                Console.WriteLine($"ERROR: Metadata file not found or encrypted.");
+                ExtensionMethods.logger.LogError($"Metadata file not found or encrypted.");
             }
             else
             {
@@ -101,29 +101,29 @@ namespace Il2CppDumper
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine(e);
+                    ExtensionMethods.logger.LogInfo(e);
                 }
             }
             if (config.RequireAnyKey)
             {
-                Console.WriteLine("Press any key to exit...");
+                ExtensionMethods.logger.LogInfo("Press any key to exit...");
                 Console.ReadKey(true);
             }
         }
 
         static void ShowHelp()
         {
-            Console.WriteLine($"usage: {AppDomain.CurrentDomain.FriendlyName} <executable-file> <global-metadata> <output-directory>");
+            ExtensionMethods.logger.LogInfo($"usage: {AppDomain.CurrentDomain.FriendlyName} <executable-file> <global-metadata> <output-directory>");
         }
 
         private static bool Init(string il2cppPath, string metadataPath, out Metadata metadata, out Il2Cpp il2Cpp)
         {
-            Console.WriteLine("Initializing metadata...");
+            ExtensionMethods.logger.LogInfo("Initializing metadata...");
             var metadataBytes = File.ReadAllBytes(metadataPath);
             metadata = new Metadata(new MemoryStream(metadataBytes));
-            Console.WriteLine($"Metadata Version: {metadata.Version}");
+            ExtensionMethods.logger.LogInfo($"Metadata Version: {metadata.Version}");
 
-            Console.WriteLine("Initializing il2cpp file...");
+            ExtensionMethods.logger.LogInfo("Initializing il2cpp file...");
             var il2cppBytes = File.ReadAllBytes(il2cppPath);
             var il2cppMagic = BitConverter.ToUInt32(il2cppBytes, 0);
             var il2CppMemory = new MemoryStream(il2cppBytes);
@@ -155,13 +155,13 @@ namespace Il2CppDumper
                 case 0xCAFEBABE: //FAT Mach-O
                 case 0xBEBAFECA:
                     var machofat = new MachoFat(new MemoryStream(il2cppBytes));
-                    Console.Write("Select Platform: ");
+                    ExtensionMethods.logger.LogInfo("Select Platform: ");
                     for (var i = 0; i < machofat.fats.Length; i++)
                     {
                         var fat = machofat.fats[i];
-                        Console.Write(fat.magic == 0xFEEDFACF ? $"{i + 1}.64bit " : $"{i + 1}.32bit ");
+                        ExtensionMethods.logger.LogInfo(fat.magic == 0xFEEDFACF ? $"{i + 1}.64bit " : $"{i + 1}.32bit ");
                     }
-                    Console.WriteLine();
+                    ExtensionMethods.logger.LogInfo($"\n");
                     var key = Console.ReadKey(true);
                     var index = int.Parse(key.KeyChar.ToString()) - 1;
                     var magic = machofat.fats[index % 2].magic;
@@ -180,13 +180,13 @@ namespace Il2CppDumper
             }
             var version = config.ForceIl2CppVersion ? config.ForceVersion : metadata.Version;
             il2Cpp.SetProperties(version, metadata.metadataUsagesCount);
-            Console.WriteLine($"Il2Cpp Version: {il2Cpp.Version}");
+            ExtensionMethods.logger.LogInfo($"Il2Cpp Version: {il2Cpp.Version}");
             if (config.ForceDump || il2Cpp.CheckDump())
             {
                 if (il2Cpp is ElfBase elf)
                 {
-                    Console.WriteLine("Detected this may be a dump file.");
-                    Console.WriteLine("Input il2cpp dump address or input 0 to force continue:");
+                    ExtensionMethods.logger.LogInfo("Detected this may be a dump file.");
+                    ExtensionMethods.logger.LogInfo("Input il2cpp dump address or input 0 to force continue:");
                     var DumpAddr = Convert.ToUInt64(Console.ReadLine(), 16);
                     if (DumpAddr != 0)
                     {
@@ -204,7 +204,7 @@ namespace Il2CppDumper
                 }
             }
 
-            Console.WriteLine("Searching...");
+            ExtensionMethods.logger.LogInfo("Searching...");
             try
             {
                 var flag = il2Cpp.PlusSearch(metadata.methodDefs.Count(x => x.methodIndex >= 0), metadata.typeDefs.Length, metadata.imageDefs.Length);
@@ -212,7 +212,7 @@ namespace Il2CppDumper
                 {
                     if (!flag && il2Cpp is PE)
                     {
-                        Console.WriteLine("Use custom PE loader");
+                        ExtensionMethods.logger.LogInfo("Use custom PE loader");
                         il2Cpp = PELoader.Load(il2cppPath);
                         il2Cpp.SetProperties(version, metadata.metadataUsagesCount);
                         flag = il2Cpp.PlusSearch(metadata.methodDefs.Count(x => x.methodIndex >= 0), metadata.typeDefs.Length, metadata.imageDefs.Length);
@@ -228,10 +228,10 @@ namespace Il2CppDumper
                 }
                 if (!flag)
                 {
-                    Console.WriteLine("ERROR: Can't use auto mode to process file, try manual mode.");
-                    Console.Write("Input CodeRegistration: ");
+                    ExtensionMethods.logger.LogError("Can't use auto mode to process file, try manual mode.");
+                    ExtensionMethods.logger.LogInfo("Input CodeRegistration: ");
                     var codeRegistration = Convert.ToUInt64(Console.ReadLine(), 16);
-                    Console.Write("Input MetadataRegistration: ");
+                    ExtensionMethods.logger.LogInfo("Input MetadataRegistration: ");
                     var metadataRegistration = Convert.ToUInt64(Console.ReadLine(), 16);
                     il2Cpp.Init(codeRegistration, metadataRegistration);
                 }
@@ -244,8 +244,8 @@ namespace Il2CppDumper
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
-                Console.WriteLine("ERROR: An error occurred while processing.");
+                ExtensionMethods.logger.LogInfo(e);
+                ExtensionMethods.logger.LogError("An error occurred while processing.");
                 return false;
             }
             return true;
@@ -253,23 +253,23 @@ namespace Il2CppDumper
 
         private static void Dump(Metadata metadata, Il2Cpp il2Cpp, string outputDir)
         {
-            Console.WriteLine("Dumping...");
+            ExtensionMethods.logger.LogInfo("Dumping...");
             var executor = new Il2CppExecutor(metadata, il2Cpp);
             var decompiler = new Il2CppDecompiler(executor);
             decompiler.Decompile(config, outputDir);
-            Console.WriteLine("Done!");
+            ExtensionMethods.logger.LogInfo("Done!");
             if (config.GenerateStruct)
             {
-                Console.WriteLine("Generate struct...");
+                ExtensionMethods.logger.LogInfo("Generate struct...");
                 var scriptGenerator = new StructGenerator(executor);
                 scriptGenerator.WriteScript(outputDir);
-                Console.WriteLine("Done!");
+                ExtensionMethods.logger.LogInfo("Done!");
             }
             if (config.GenerateDummyDll)
             {
-                Console.WriteLine("Generate dummy dll...");
+                ExtensionMethods.logger.LogInfo("Generate dummy dll...");
                 DummyAssemblyExporter.Export(executor, outputDir, config.DummyDllAddToken);
-                Console.WriteLine("Done!");
+                ExtensionMethods.logger.LogInfo("Done!");
             }
         }
     }

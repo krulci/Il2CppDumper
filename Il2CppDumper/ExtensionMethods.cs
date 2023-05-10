@@ -1,4 +1,5 @@
-﻿using System;
+using BepInEx.Logging;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -6,16 +7,38 @@ using System.Runtime.InteropServices;
 
 namespace Il2CppDumper
 {
+    /// <summary>
+    /// Provides extension methods for logging and processing IL2CPP files.
+    /// </summary>
     public class ExtensionMethods
     {
-        public static bool Init(BepInEx.Logging.ManualLogSource logger, byte[] il2cppBytes, byte[] metadataBytes, out Metadata metadata, out Il2Cpp il2Cpp)
+        /// <summary>
+        /// The logger instance for the Il2CppDumper extension methods.
+        /// </summary>
+        public static ManualLogSource logger;
+
+        static ExtensionMethods()
         {
-            logger.LogInfo("Initializing metadata...");
+            logger = new ManualLogSource("Il2CppDumper");
+            Logger.Sources.Add(logger);
+        }
+
+        /// <summary>
+        /// Initializes the IL2CPP metadata and IL2CPP file.
+        /// </summary>
+        /// <param name="il2cppBytes">The IL2CPP file bytes.</param>
+        /// <param name="metadataBytes">The metadata file bytes.</param>
+        /// <param name="metadata">The initialized metadata object.</param>
+        /// <param name="il2Cpp">The initialized IL2CPP object.</param>
+        /// <returns><c>true</c> if initialization is successful; otherwise, <c>false</c>.</returns>
+        public static bool Init(byte[] il2cppBytes, byte[] metadataBytes, out Metadata metadata, out Il2Cpp il2Cpp)
+        {
+            ExtensionMethods.logger.LogInfo("Initializing metadata...");
             //var metadataBytes = File.ReadAllBytes(metadataPath);
             metadata = new Metadata(new MemoryStream(metadataBytes));
-            logger.LogInfo($"Metadata Version: {metadata.Version}");
+            ExtensionMethods.logger.LogInfo($"Metadata Version: {metadata.Version}");
 
-            logger.LogInfo("Initializing il2cpp file...");
+            ExtensionMethods.logger.LogInfo("Initializing il2cpp file...");
             //var il2cppBytes = File.ReadAllBytes(il2cppPath);
             var il2cppMagic = BitConverter.ToUInt32(il2cppBytes, 0);
             var il2CppMemory = new MemoryStream(il2cppBytes);
@@ -47,13 +70,13 @@ namespace Il2CppDumper
                 case 0xCAFEBABE: //FAT Mach-O
                 case 0xBEBAFECA:
                     var machofat = new MachoFat(new MemoryStream(il2cppBytes));
-                    logger.LogInfo("Select Platform: ");
+                    ExtensionMethods.logger.LogInfo("Select Platform: ");
                     for (var i = 0; i < machofat.fats.Length; i++)
                     {
                         var fat = machofat.fats[i];
-                        logger.LogInfo(fat.magic == 0xFEEDFACF ? $"{i + 1}.64bit " : $"{i + 1}.32bit ");
+                        ExtensionMethods.logger.LogInfo(fat.magic == 0xFEEDFACF ? $"{i + 1}.64bit " : $"{i + 1}.32bit ");
                     }
-                    Console.WriteLine();
+                    ExtensionMethods.logger.LogInfo($"\n");
                     var key = Console.ReadKey(true);
                     var index = int.Parse(key.KeyChar.ToString()) - 1;
                     var magic = machofat.fats[index % 2].magic;
@@ -72,13 +95,13 @@ namespace Il2CppDumper
             }
             var version = metadata.Version;
             il2Cpp.SetProperties(version, metadata.metadataUsagesCount);
-            logger.LogInfo($"Il2Cpp Version: {il2Cpp.Version}");
+            ExtensionMethods.logger.LogInfo($"Il2Cpp Version: {il2Cpp.Version}");
             if (false || il2Cpp.CheckDump())
             {
                 if (il2Cpp is ElfBase elf)
                 {
-                    logger.LogInfo("Detected this may be a dump file.");
-                    logger.LogInfo("Input il2cpp dump address or input 0 to force continue:");
+                    ExtensionMethods.logger.LogInfo("Detected this may be a dump file.");
+                    ExtensionMethods.logger.LogInfo("Input il2cpp dump address or input 0 to force continue:");
                     var DumpAddr = Convert.ToUInt64(Console.ReadLine(), 16);
                     if (DumpAddr != 0)
                     {
@@ -96,7 +119,7 @@ namespace Il2CppDumper
                 }
             }
 
-            logger.LogInfo("Searching...");
+            ExtensionMethods.logger.LogInfo("Searching...");
             try
             {
                 var flag = il2Cpp.PlusSearch(metadata.methodDefs.Count(x => x.methodIndex >= 0), metadata.typeDefs.Length, metadata.imageDefs.Length);
@@ -104,11 +127,11 @@ namespace Il2CppDumper
                 {
                     if (!flag && il2Cpp is PE)
                     {
-                        logger.LogInfo("Use custom PE loader");
+                        ExtensionMethods.logger.LogInfo("Use custom PE loader");
                         /*il2Cpp = PELoader.Load(il2cppBytes);
                         il2Cpp.SetProperties(version, metadata.metadataUsagesCount);
                         flag = il2Cpp.PlusSearch(metadata.methodDefs.Count(x => x.methodIndex >= 0), metadata.typeDefs.Length, metadata.imageDefs.Length);*/
-                        throw new NotImplementedException();
+                        throw new NotImplementedException("Doubt this case will be triggered.");
                     }
                 }
                 if (!flag)
@@ -121,10 +144,10 @@ namespace Il2CppDumper
                 }
                 if (!flag)
                 {
-                    logger.LogInfo("ERROR: Can't use auto mode to process file, try manual mode.");
-                    logger.LogInfo("Input CodeRegistration: ");
+                    ExtensionMethods.logger.LogError("Can't use auto mode to process file, try manual mode.");
+                    ExtensionMethods.logger.LogInfo("Input CodeRegistration: ");
                     var codeRegistration = Convert.ToUInt64(Console.ReadLine(), 16);
-                    logger.LogInfo("Input MetadataRegistration: ");
+                    ExtensionMethods.logger.LogInfo("Input MetadataRegistration: ");
                     var metadataRegistration = Convert.ToUInt64(Console.ReadLine(), 16);
                     il2Cpp.Init(codeRegistration, metadataRegistration);
                 }
@@ -143,9 +166,16 @@ namespace Il2CppDumper
             }
             return true;
         }
-        public static void GenerateCecilAssemblies(BepInEx.Logging.ManualLogSource logger, Metadata metadata, Il2Cpp il2Cpp, out List<Mono.Cecil.AssemblyDefinition> Assemblies)
+
+        /// <summary>
+        /// Generates Cecil assemblies from the metadata and IL2CPP.
+        /// </summary>
+        /// <param name="metadata">The metadata object.</param>
+        /// <param name="il2Cpp">The IL2CPP object.</param>
+        /// <param name="Assemblies">The generated AssemblyDefinitions.</param>
+        public static void GenerateCecilAssemblies(Metadata metadata, Il2Cpp il2Cpp, out List<Mono.Cecil.AssemblyDefinition> Assemblies)
         {
-            Console.WriteLine("Generating AssemblyDefinition...");
+            ExtensionMethods.logger.LogInfo("Generating AssemblyDefinition...");
             var executor = new Il2CppExecutor(metadata, il2Cpp);
             var dummy = new DummyAssemblyGenerator(executor, true);
             foreach (var assembly in dummy.Assemblies)
